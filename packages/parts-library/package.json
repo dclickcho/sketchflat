@@ -1,0 +1,21 @@
+{
+  "name": "@sketchflat/parts-library",
+  "version": "0.1.0",
+  "private": true,
+  "description": "SketchFlat 부품 SVG 라이브러리. 16개 카테고리의 표준 부품 SVG와 메타데이터를 제공.",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@sketchflat/svg-schema": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.5"
+  }
+}

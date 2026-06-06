@@ -1,0 +1,27 @@
+# SketchFlat — 로컬/단일 호스트 배포용 오케스트레이션.
+#   docker compose up --build  →  http://localhost (Nginx :80 → web :3000)
+#
+# 환경변수는 apps/web/.env.local 에서 주입 (Supabase / Replicate / Quiver).
+services:
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    env_file:
+      - apps/web/.env.local
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+    expose:
+      - "3000"
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:1.27-alpine
+    depends_on:
+      - web
+    ports:
+      - "80:80"
+    volumes:
+      - ./docker/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    restart: unless-stopped

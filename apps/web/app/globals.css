@@ -1,0 +1,125 @@
+@import 'pretendard/dist/web/variable/pretendardvariable-dynamic-subset.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 0 0% 0%;
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 0%;
+    --primary: 0 0% 0%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 0 0% 96%;
+    --secondary-foreground: 0 0% 0%;
+    --muted: 0 0% 96%;
+    --muted-foreground: 0 0% 40%;
+    --accent: 0 0% 96%;
+    --accent-foreground: 0 0% 0%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 0 0% 90%;
+    --input: 0 0% 90%;
+    --ring: 0 0% 0%;
+    --radius: 0.5rem;
+
+    /* Editor chrome — neutral grays for panel surfaces, separate from --background. */
+    --editor-bg: 0 0% 96%;
+    --editor-panel: 0 0% 100%;
+    --editor-border: 0 0% 91%;
+    --editor-hover: 0 0% 95%;
+    --editor-active: 0 0% 12%;
+    --editor-active-fg: 0 0% 100%;
+    --editor-mute: 0 0% 45%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: 'kern' 1;
+    letter-spacing: -0.14px;
+  }
+
+  /* Dashed focus indicators echoing Figma's selection-handle aesthetic. */
+  :focus-visible {
+    outline: 2px dashed hsl(var(--foreground));
+    outline-offset: 2px;
+  }
+
+  /* Tag labels — Pretendard 기반, uppercase + 양의 tracking. */
+  .label-mono {
+    font-size: 10px;
+    line-height: 1;
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
+    font-weight: 500;
+  }
+}
+
+@layer utilities {
+  /* Modern, minimal scrollbar — thin track, subtle thumb that surfaces on hover. */
+  .scrollbar-minimal {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(0, 0, 0, 0.18) transparent;
+  }
+  .scrollbar-minimal::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  .scrollbar-minimal::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .scrollbar-minimal::-webkit-scrollbar-thumb {
+    background-color: rgba(0, 0, 0, 0.14);
+    border: 2px solid transparent;
+    background-clip: padding-box;
+    border-radius: 9999px;
+    transition: background-color 120ms ease;
+  }
+  .scrollbar-minimal::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(0, 0, 0, 0.32);
+    background-clip: padding-box;
+  }
+  .scrollbar-minimal::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  /* 벡터화 스트리밍 미리보기 — Quiver AI 식 "그려지는 중" 모션.
+     - 기본: 모든 선을 회색으로 깔아 "아직 확정 안 된 밑그림(그리는 중)" 으로 보이게 한다.
+       완성 결과물(검정)과 한눈에 구분되도록.
+     - (b) cross-fade: stroke 만 transition 350ms — data-current 가 빠지는 순간 파랑→회색이
+       instant 가 아니라 부드럽게 fade. 새 mount 시점엔 transition 이 fire 하지 않아 파랑은 즉시 표시.
+     - data-current: 가장 최근 element 한 개에만 붙는다. 파란 stroke 로 "지금 그려지고 있는
+       선" 표시. 다음 element 가 들어오면 prop 만 바뀌어 자동 해제 → 위 transition 으로 페이드 아웃.
+     - (A) dasharray reveal 모션은 PreviewElement 가 path 마다 getTotalLength() 로 정확한 길이를
+       측정해 inline style 로 직접 제어 — 옛 CSS 의 dasharray=5000 고정값은 typical Arrow path
+       길이(200~800)보다 너무 커서 reveal 구간이 5%(~25ms) 만 보였다 (사실상 모션 없음).
+     - stroke-width 는 덮지 않는다 — 원본 path 의 1.5 user-unit 두께를 그대로 두어야
+       출력 결과물과 같은 굵기로 보인다 (px 고정값은 화면 픽셀이라 더 두껍게 튄다).
+     - !important 가 필요한 건 inline stroke="..." 를 덮어야 하기 때문. */
+  .vectorize-preview path,
+  .vectorize-preview polygon,
+  .vectorize-preview polyline,
+  .vectorize-preview rect,
+  .vectorize-preview circle,
+  .vectorize-preview ellipse,
+  .vectorize-preview line {
+    stroke: #9ca3af !important;
+    transition: stroke 350ms ease-out;
+  }
+  .vectorize-preview g[data-current='true'] path,
+  .vectorize-preview g[data-current='true'] polygon,
+  .vectorize-preview g[data-current='true'] polyline,
+  .vectorize-preview g[data-current='true'] rect,
+  .vectorize-preview g[data-current='true'] circle,
+  .vectorize-preview g[data-current='true'] ellipse,
+  .vectorize-preview g[data-current='true'] line {
+    stroke: #2563eb !important;
+  }
+}

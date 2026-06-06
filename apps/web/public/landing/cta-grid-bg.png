@@ -1,0 +1,30 @@
+<svg preserveAspectRatio="none" width="100%" height="100%" overflow="visible" style="display: block;" viewBox="0 0 1280 489" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="astro-island &#226;&#134;&#146; SVG" clip-path="url(#clip0_0_4)">
+<path id="Vector" d="M1280 -217.987H0V489.56H1280V-217.987Z" fill="var(--fill-0, #F8F8F8)"/>
+<g id="Group 6">
+<path id="Vector_2" d="M80.5 -178.936V489.683" stroke="var(--stroke-0, #EBEBEB)"/>
+<path id="Vector_3" d="M160.5 -178.936V489.683" stroke="var(--stroke-0, #EBEBEB)"/>
+<path id="Vector_4" d="M240.5 -178.936V489.683" stroke="var(--stroke-0, #EBEBEB)"/>
+<path id="Vector_5" d="M320.5 -178.936V489.683" stroke="var(--stroke-0, #EBEBEB)"/>
+</g>
+<path id="Vector_6" d="M0 326.455H1280" stroke="var(--stroke-0, #EBEBEB)"/>
+<path id="Vector_7" d="M0 381.092H1280" stroke="var(--stroke-0, #EBEBEB)"/>
+<path id="Vector_8" d="M0 435.729H1280" stroke="var(--stroke-0, #EBEBEB)"/>
+<path id="Vector_9" d="M0 490.366H1280" stroke="var(--stroke-0, #EBEBEB)"/>
+<g id="Group 5">
+<path id="Vector_10" d="M960.5 -2.04888V489.683" stroke="var(--stroke-0, #EBEBEB)"/>
+<path id="Vector_11" d="M1040.5 -2.04888V489.683" stroke="var(--stroke-0, #EBEBEB)"/>
+<path id="Vector_12" d="M1120.5 -2.04888V489.683" stroke="var(--stroke-0, #EBEBEB)"/>
+<path id="Vector_13" d="M1200.5 -2.04888V489.683" stroke="var(--stroke-0, #EBEBEB)"/>
+</g>
+<path id="Vector_14" d="M160 327.138H81V435.046H160V327.138Z" fill="var(--fill-0, #F8F8F8)"/>
+<path id="Vector_15" d="M320 436.412H241V489.683H320V436.412Z" fill="var(--fill-0, #F8F8F8)"/>
+<path id="Vector_16" d="M1200 327.138H1121V435.046H1200V327.138Z" fill="var(--fill-0, #F8F8F8)"/>
+<path id="Vector_17" d="M1040 436.412H961V489.683H1040V436.412Z" fill="var(--fill-0, #F8F8F8)"/>
+</g>
+<defs>
+<clipPath id="clip0_0_4">
+<rect width="1280" height="489" fill="white"/>
+</clipPath>
+</defs>
+</svg>

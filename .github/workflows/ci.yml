@@ -1,0 +1,44 @@
+name: CI
+
+# PR·push 시 lint · typecheck · build 자동 검증. 실배포(CD)는 Vercel Git 연동이 담당.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm run lint
+
+      - name: Typecheck
+        run: pnpm run typecheck
+
+      - name: Build
+        run: pnpm run build
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"
+          # 빌드 타임에 클라이언트 번들로 인라인되는 public 변수의 placeholder.
+          # 실제 값은 Vercel 환경변수로 주입 (CI 빌드는 컴파일 검증 목적).
+          NEXT_PUBLIC_SUPABASE_URL: "https://placeholder.supabase.co"
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: "placeholder-anon-key"
+          NEXT_PUBLIC_APP_URL: "http://localhost:3000"

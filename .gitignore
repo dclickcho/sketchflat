@@ -1,0 +1,92 @@
+# dependencies
+node_modules/
+
+# build outputs
+dist/
+.next/
+out/
+*.tsbuildinfo
+
+# project reference docs (제출 참고용, 커밋 제외)
+*.pdf
+
+# env
+.env
+.env.local
+.env.*.local
+
+# misc
+.DS_Store
+Thumbs.db
+*.log
+.turbo/
+coverage/
+.claude/
+.mcp.json
+cc-account-switcher/
+
+# vercel
+.vercel
+
+# 인증서·개인키 (실수 커밋 방지)
+*.pem
+
+# YOLO 데이터셋 / 학습 산출물 (대용량, 별도 관리)
+yolo_labeling/
+models/
+runs/
+
+# Python 바이트코드
+__pycache__/
+*.pyc
+
+# ── 대용량 바이너리 (어디에 있든 git 에 넣지 않음) ──
+# 모델 가중치
+*.pt
+*.pth
+*.onnx
+# 영상·오디오·After Effects 프로젝트
+*.mp4
+*.mp3
+*.aep
+# 아카이브·실행파일·문서 산출물
+*.zip
+*.exe
+*.hwpx
+
+# ── 루트에 흩어진 스크린샷/참고 이미지/스크래치 (앱 자산은 apps/web/public 에 위치) ──
+/*.png
+/*.jpg
+/*.jpeg
+/*.svg
+/*.pdf
+/*.b64*.txt
+/_job_*
+/_diss_*.txt
+/console*.txt
+/dissertation.*
+/pdf_*.txt
+/flatsketch.*
+/img-input.*
+/refshirt.*
+/logo.b64*.txt
+/logo-small.b64*.txt
+/logo-chunks.js
+/도전제안서*
+
+# ── 실험·미리보기·프레임 덤프 (임시 산출물) ──
+experiments/
+templete/
+ae-icons/
+ae-scripts/
+.preview_*/
+.refer*_frames/
+.figma_sections/
+.diss_pages/
+Adobe After Effects 자동 저장/
+
+# ── 벤더링된 외부 레포·바이너리 배포본 (별도 관리) ──
+scripts/bench_vectorize/vsketch/
+scripts/bench_vectorize/starvector/
+scripts/bench_vectorize/dvtd/
+scripts/bench_vectorize/potrace/potrace-1.16.win64/
