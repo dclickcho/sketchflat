@@ -20,7 +20,6 @@ import { fitPartsToBbox } from '@/lib/fit-parts-to-bbox';
 import { expandBrushPart } from '@/lib/expand-brush';
 import { findBrushDefinition } from '@/lib/brush-lookup';
 import {
-  LIBRARY_ASSET_SNAPSHOTS,
   LIBRARY_ASSET_CATEGORY_ALIASES,
 } from '@/lib/library-asset-snapshots';
 // polygon-clipping@0.15 은 API 객체를 default 로, 타입을 named 로 export 한다.
@@ -2727,12 +2726,10 @@ export const useEditorStore = create<EditorStore>()(
         const sketch = get().sketch;
         if (!sketch) return;
 
-        // 매칭 그룹 — 카테고리 그대로 ("Sleeve"), 별칭 ("소매" / "Sleeve (Left)" /
-        // "Sleeve (Right)"), 또는 이전 라이브러리 적용으로 자동 생성된 그룹명 (예:
-        // "Sleeve (Puff Sleeve)") 까지 모두 잡아서 한 번에 교체. 카테고리·별칭 각각에
-        // 대해 `${name} (` 프리픽스도 검사. 두 분기 (snapshot / fit-to-bbox) 가 같은
-        // 매칭 규칙을 써야 puff sleeve 처럼 좌·우 분리 그룹이 있는 카테고리도
-        // collar 와 동일하게 한 번에 교체된다.
+        // 같은 카테고리 부위 매칭 — "크기 참조" 용도로만 쓴다. (갈아끼우기/위치 스냅은
+        // 아직 미완성이라 기존 부위를 숨기거나 그 자리에 놓지 않는다.) 카테고리 그대로
+        // ("Sleeve") · 별칭 ("소매" / "Sleeve (Left)" / "Sleeve (Right)") · 이전 적용으로
+        // 생긴 그룹명 ("Sleeve (Puff Sleeve)") 까지 `${name} (` 프리픽스로 함께 잡는다.
         const aliases = LIBRARY_ASSET_CATEGORY_ALIASES[asset.category] ?? [];
         const groupNamePrefixes = [
           `${asset.category} (`,
@@ -2749,83 +2746,20 @@ export const useEditorStore = create<EditorStore>()(
             matchedGroupIds.push(gid);
           }
         }
-        const hideIds = new Set<string>();
-        for (const gid of matchedGroupIds) {
-          for (const pid of get().getGroupDescendantPartIds(gid)) {
-            hideIds.add(pid);
-          }
-        }
 
-        // 데모 스냅샷 분기 — 카탈로그 ID 에 미리 측정해 둔 part 데이터가 있으면 fit-to-bbox
-        // 경로를 우회해 위치/스케일/패스 굵기까지 그대로 캔버스에 떨어뜨린다. 영상 시연용.
-        const snapshot = LIBRARY_ASSET_SNAPSHOTS[asset.id];
-        if (snapshot) {
-          const idStamp = `lib_${Date.now().toString(36)}_${Math.floor(
-            Math.random() * 1000,
-          ).toString(36)}`;
-          const newGroupId = `group_${idStamp}`;
-          const newGroupName = `${asset.category} (${asset.name})`;
-
-          set((state) => {
-            if (!state.sketch) return;
-            if (hideIds.size > 0) {
-              for (const part of state.sketch.parts) {
-                if (hideIds.has(part.id)) part.visible = false;
-              }
-            }
-            const maxZ = state.sketch.parts.reduce(
-              (m, p) => (p.z_index > m ? p.z_index : m),
-              0,
-            );
-            snapshot.forEach((p, i) => {
-              // 깊은 복제 — 스냅샷은 모듈 상수라 직접 push 하면 동일 ref 가 sketch.parts 에 들어가
-              // 다음 set 에서 immer mutate 가 어려워진다.
-              const cloned = JSON.parse(JSON.stringify(p)) as Part;
-              // transform 을 anchor 좌표에 baking → transform 은 identity 로. scaleX≈0.15 인 채로
-              // 두면 stroke_width 가 그만큼 짓눌려 0.3px 가 되어 시각적으로 사라진다.
-              // baking 후엔 stroke_width 가 그대로 렌더돼 패스 두께가 보존된다.
-              const t = cloned.transform ?? DEFAULT_TRANSFORM;
-              cloned.anchors = cloned.anchors.map((a) =>
-                transformAnchor(a, t, DEFAULT_TRANSFORM),
-              );
-              // dump 단계에서 이미 baked 됐다면 t 가 identity 라 no-op.
-              // 혹시 비-identity 인 스냅샷이 들어와도 stroke 가 6.7x 두꺼워지지 않도록 방어.
-              bakeStrokeIntoIdentity(cloned, t);
-              cloned.transform = { ...DEFAULT_TRANSFORM };
-              recompilePartPath(cloned);
-              state.sketch!.parts.push({
-                ...cloned,
-                id: `${idStamp}_${cloned.id}`,
-                z_index: maxZ + 1 + i,
-                group_id: newGroupId,
-                visible: true,
-              });
-            });
-            state.sketch.group_names = {
-              ...state.sketch.group_names,
-              [newGroupId]: newGroupName,
-            };
-            state.sketch.updated_at = new Date().toISOString();
-          });
-          return;
-        }
-
-        // fit-to-bbox 경로 — 매칭된 그룹들의 union world bbox 를 타겟으로 사용.
-        // 예: Sleeve 카테고리 에셋이면 'Sleeve (Left)' + 'Sleeve (Right)' 두 그룹의
-        // 합쳐진 bbox 안에 puff sleeve 가 비율 유지로 들어간다. 매칭 그룹이 없으면
-        // SVG fetch 후 캔버스 중앙 + 원본 크기로 폴백.
-        let targetBbox: { x: number; y: number; width: number; height: number } | null = null;
-        if (hideIds.size > 0) {
+        // 주어진 part id 집합의 world bbox 크기(width/height). 비어 있으면 null.
+        const worldSizeOf = (
+          partIds: Set<string>,
+        ): { width: number; height: number } | null => {
           let minX = Infinity;
           let minY = Infinity;
           let maxX = -Infinity;
           let maxY = -Infinity;
           let hasAny = false;
           for (const part of sketch.parts) {
-            if (!hideIds.has(part.id)) continue;
-            const flats = flattenPart(part);
+            if (!partIds.has(part.id)) continue;
             const t = part.transform ?? DEFAULT_TRANSFORM;
-            for (const sub of flats) {
+            for (const sub of flattenPart(part)) {
               for (const pt of sub.points) {
                 const w = localToWorld({ x: pt.x, y: pt.y }, t);
                 if (!Number.isFinite(w.x) || !Number.isFinite(w.y)) continue;
@@ -2837,8 +2771,40 @@ export const useEditorStore = create<EditorStore>()(
               }
             }
           }
-          if (hasAny) {
-            targetBbox = { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+          if (!hasAny) return null;
+          return { width: maxX - minX, height: maxY - minY };
+        };
+
+        // 크기 기준(sizeRef) 결정:
+        //   1) 같은 카테고리 부위가 있으면 그 부위들의 합쳐진 bbox 크기.
+        //   2) 없으면 기존 최상위 그룹(부위)들의 중앙값 크기.
+        //   3) 그래도 없으면(빈 캔버스) 캔버스 단변의 40% 정사각.
+        let sizeRef: { width: number; height: number } | null = null;
+        if (matchedGroupIds.length > 0) {
+          const ids = new Set<string>();
+          for (const gid of matchedGroupIds) {
+            for (const pid of get().getGroupDescendantPartIds(gid)) ids.add(pid);
+          }
+          sizeRef = worldSizeOf(ids);
+        }
+        if (!sizeRef) {
+          const sizes: { width: number; height: number }[] = [];
+          for (const gid of Object.keys(sketch.group_names)) {
+            if (sketch.group_parents[gid]) continue; // 최상위 그룹(부위)만
+            const ids = new Set<string>(get().getGroupDescendantPartIds(gid));
+            const s = worldSizeOf(ids);
+            if (s && s.width > 0 && s.height > 0) sizes.push(s);
+          }
+          if (sizes.length > 0) {
+            const median = (arr: number[]): number => {
+              const s = [...arr].sort((a, b) => a - b);
+              const m = Math.floor(s.length / 2);
+              return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+            };
+            sizeRef = {
+              width: median(sizes.map((b) => b.width)),
+              height: median(sizes.map((b) => b.height)),
+            };
           }
         }
 
@@ -2853,18 +2819,18 @@ export const useEditorStore = create<EditorStore>()(
         const parsed = parseRawSvgToParts(rawSvg);
         if (!parsed || parsed.parts.length === 0) return;
 
-        if (!targetBbox) {
-          const srcW = parsed.canvas.width;
-          const srcH = parsed.canvas.height;
-          const cw = sketch.canvas.width;
-          const ch = sketch.canvas.height;
-          targetBbox = {
-            x: (cw - srcW) / 2,
-            y: (ch - srcH) / 2,
-            width: srcW,
-            height: srcH,
-          };
+        if (!sizeRef) {
+          const base = Math.min(sketch.canvas.width, sketch.canvas.height) * 0.4;
+          sizeRef = { width: base, height: base };
         }
+
+        // 크기 기준 박스를 캔버스 정중앙에 배치 — 위치는 항상 중앙(부위 자리에 스냅하지 않음).
+        const targetBbox = {
+          x: (sketch.canvas.width - sizeRef.width) / 2,
+          y: (sketch.canvas.height - sizeRef.height) / 2,
+          width: sizeRef.width,
+          height: sizeRef.height,
+        };
 
         const fitted = fitPartsToBbox(parsed.parts, targetBbox);
 
@@ -2872,19 +2838,16 @@ export const useEditorStore = create<EditorStore>()(
         const newGroupId = `group_${idStamp}`;
         const newGroupName = `${asset.category} (${asset.name})`;
 
+        const newPartIds: string[] = [];
         set((state) => {
           if (!state.sketch) return;
-          if (hideIds.size > 0) {
-            for (const part of state.sketch.parts) {
-              if (hideIds.has(part.id)) part.visible = false;
-            }
-          }
-
           const maxZ = state.sketch.parts.reduce((m, p) => (p.z_index > m ? p.z_index : m), 0);
           fitted.forEach((p, i) => {
+            const id = `${idStamp}_${p.id}`;
+            newPartIds.push(id);
             state.sketch!.parts.push({
               ...p,
-              id: `${idStamp}_${p.id}`,
+              id,
               z_index: maxZ + 1 + i,
               group_id: newGroupId,
               visible: true,
@@ -2895,6 +2858,10 @@ export const useEditorStore = create<EditorStore>()(
             [newGroupId]: newGroupName,
           };
           state.sketch.updated_at = new Date().toISOString();
+          // 방금 올린 에셋을 선택 상태로 → 사용자가 바로 위치/크기를 조정할 수 있게.
+          state.selectedPartIds = newPartIds;
+          state.selectedAnchorId = null;
+          state.selectedAnchors = [];
         });
       },
 
