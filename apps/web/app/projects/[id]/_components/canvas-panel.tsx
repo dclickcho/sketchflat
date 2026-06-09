@@ -4429,7 +4429,9 @@ export default function CanvasPanel({ projectId }: Props) {
                         aria-hidden="true"
                       />
                       <p className="text-sm text-neutral-600">
-                        AI가 도식화를 생성 중입니다...
+                        {replicateImageUrl
+                          ? '도식화 구성 중...'
+                          : '이미지 분석 중...'}
                       </p>
                     </div>
                   )}
