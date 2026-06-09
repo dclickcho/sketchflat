@@ -2240,8 +2240,20 @@ export const useEditorStore = create<EditorStore>()(
         if (!sketch) return [partId];
         const target = sketch.parts.find((p) => p.id === partId);
         if (!target?.group_id) return [partId];
-        const gid = target.group_id;
-        return sketch.parts.filter((p) => p.group_id === gid).map((p) => p.id);
+        // 클릭은 '최외곽 그룹' 전체를 한 단위로 잡는다 (Illustrator 컨벤션).
+        // svg-to-parts 는 part.group_id 에 '최내부' 그룹을 넣고 중첩은 group_parents 로
+        // 표현한다. 그래서 group_id 형제만 보면 한 패스만 잡히는 경우가 생긴다(각 패스가
+        // 자기만의 내부 <g> 에 들어간 경우). group_parents 를 거슬러 올라가 부모 없는 최상위
+        // 조상 그룹을 찾고, 그 그룹의 모든 후손 파트를 반환한다.
+        // 평면(1단계) 그룹이면 최상위 = group_id 라 기존과 동일하게 동작한다.
+        const parents = sketch.group_parents ?? {};
+        let top = target.group_id;
+        const seen = new Set<string>();
+        while (parents[top] && !seen.has(top)) {
+          seen.add(top);
+          top = parents[top]!;
+        }
+        return get().getGroupDescendantPartIds(top);
       },
 
       getGroupDescendantPartIds: (groupId) => {
