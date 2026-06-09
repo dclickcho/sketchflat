@@ -872,7 +872,7 @@ function LayersTab() {
       e.dataTransfer.effectAllowed = 'move';
       // 데이터를 실제로 쓰진 않지만, 일부 브라우저는 setData 가 없으면 드래그를 시작하지 않는다.
       try {
-        e.dataTransfer.setData('application/x-sketchpack-layer', '1');
+        e.dataTransfer.setData('application/x-sketchflat-layer', '1');
       } catch {
         /* 무시 */
       }

@@ -150,7 +150,7 @@ export function LandingPage() {
                 <div className="size-2.5 left-[16px] top-[14px] absolute bg-neutral-300 rounded-full" />
                 <div className="size-2.5 left-[34px] top-[14px] absolute bg-neutral-300 rounded-full" />
                 <div className="size-2.5 left-[52px] top-[14px] absolute bg-neutral-300 rounded-full" />
-                <div className="left-[176px] top-[13px] absolute text-neutral-500 text-xs font-medium">Sketchpack</div>
+                <div className="left-[176px] top-[13px] absolute text-neutral-500 text-xs font-medium">SketchFlat</div>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img className="w-[321px] h-[336px] left-[50px] top-[62px] absolute rounded-sm object-cover" src="/landing/gen-output-shirt.png" alt="Generated vector flat" />
               </div>

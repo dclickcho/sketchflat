@@ -11,7 +11,7 @@
 .claude
 .mcp.json
 *.pdf
-sketchpack-spec
+sketchflat-spec
 supabase/.branches
 supabase/.temp
 **/.env.local

@@ -54,7 +54,7 @@ export function SettingsModal({
     setLangDraft(language);
     // localStorage 에 저장된 테마 복원.
     try {
-      const saved = window.localStorage.getItem('sketchpack:theme') as ThemeKey | null;
+      const saved = window.localStorage.getItem('sketchflat:theme') as ThemeKey | null;
       if (saved === 'system' || saved === 'light' || saved === 'dark') setTheme(saved);
     } catch {
       // localStorage 사용 불가 환경 — 무시.
@@ -162,7 +162,7 @@ export function SettingsModal({
   function handleThemeChange(next: ThemeKey) {
     setTheme(next);
     try {
-      window.localStorage.setItem('sketchpack:theme', next);
+      window.localStorage.setItem('sketchflat:theme', next);
     } catch {
       // 저장 실패는 무시 — 시각적 토글 데모용.
     }
