@@ -107,6 +107,9 @@ const ZOOM_TOOL_FACTOR = 2;
 
 const SELECTION_FILL = 'rgba(56, 132, 255, 0.08)';
 const SELECTION_STROKE = 'rgba(56, 132, 255, 0.9)';
+// Alt 마퀴(선택 해제) 시각 표시 — 파란 추가 마퀴와 구분되도록 붉은 톤.
+const MARQUEE_SUBTRACT_FILL = 'rgba(244, 63, 94, 0.08)';
+const MARQUEE_SUBTRACT_STROKE = 'rgba(244, 63, 94, 0.9)';
 // 파트의 stroke_width 와 무관하게 선택/호버 표시는 항상 같은 화면 픽셀 두께로 보이도록 고정.
 // viewport.zoom 으로 나눠 world 좌표로 변환해 사용한다.
 const SELECTION_STROKE_WIDTH_PX = 1.5;
@@ -672,6 +675,9 @@ export default function CanvasPanel({ projectId }: Props) {
   // 마퀴 시작 시점의 Shift 상태 — direct-select 마퀴는 mouseup 까지 결과를 보류하므로
   // 그 사이 키 상태 변화에 영향을 받지 않도록 mousedown 시점 값을 박제한다.
   const marqueeShiftRef = useRef(false);
+  // 마퀴 시작 시점의 Alt 상태 — Alt 드래그는 마퀴에 걸린 파트를 현재 선택에서 빼는
+  // '선택 해제' 모드. 다중 선택 중 일부만 드래그로 풀고 싶을 때 사용. (shift 와 동일하게 박제.)
+  const marqueeAltRef = useRef(false);
 
   // direct-select 다중 앵커 드래그용. dragStart 시점의 selection 스냅샷과 직전 anchor 위치(world).
   // dragMove 마다 delta(=현재 anchor 위치 - 직전 위치)만큼 모든 선택 anchor 를 평행이동.
@@ -2137,11 +2143,13 @@ export default function CanvasPanel({ projectId }: Props) {
       const world = stageToWorld(pointer);
       marqueeStartRef.current = world;
       marqueeShiftRef.current = e.evt.shiftKey;
+      marqueeAltRef.current = e.evt.altKey;
       setMarquee({ x: world.x, y: world.y, width: 0, height: 0 });
 
-      // shift가 아니면 기존 선택 해제. direct-select 모드에선 part 선택은 유지하고
-      // anchor 선택만 비운다 — 마퀴 결과로 새 anchor 선택을 만들기 위함.
-      if (!e.evt.shiftKey) {
+      // shift(추가)/alt(해제) 모두 기존 선택을 유지해야 한다. 둘 다 아닐 때만 기존 선택 해제.
+      // direct-select 모드에선 part 선택은 유지하고 anchor 선택만 비운다 — 마퀴 결과로
+      // 새 anchor 선택을 만들기 위함.
+      if (!e.evt.shiftKey && !e.evt.altKey) {
         if (activeTool === 'direct-select') clearAnchorSelection();
         else clearSelection();
       }
@@ -2324,8 +2332,18 @@ export default function CanvasPanel({ projectId }: Props) {
         }
       }
       if (anchorHits.length > 0) {
-        if (marqueeShiftRef.current) addAnchorsToSelection(anchorHits);
-        else selectAnchors(anchorHits);
+        if (marqueeAltRef.current) {
+          // Alt 마퀴 — 걸린 앵커를 현재 선택에서 제거.
+          const remove = new Set(anchorHits.map((a) => `${a.partId}:${a.anchorId}`));
+          const remaining = useEditorStore
+            .getState()
+            .selectedAnchors.filter((a) => !remove.has(`${a.partId}:${a.anchorId}`));
+          selectAnchors(remaining);
+        } else if (marqueeShiftRef.current) {
+          addAnchorsToSelection(anchorHits);
+        } else {
+          selectAnchors(anchorHits);
+        }
       }
       return;
     }
@@ -2343,7 +2361,17 @@ export default function CanvasPanel({ projectId }: Props) {
       const box = node.getClientRect({ relativeTo: layerRef.current ?? undefined });
       if (rectsIntersect(box, rect)) hits.push(partId);
     });
-    if (hits.length > 0) selectMany([...new Set([...selectedPartIds, ...hits])]);
+    if (hits.length > 0) {
+      if (marqueeAltRef.current) {
+        // Alt 마퀴 — 걸린 파트를 현재 선택에서 빼는 '선택 해제' 모드.
+        const remove = new Set(hits);
+        selectMany(selectedPartIds.filter((id) => !remove.has(id)));
+      } else {
+        // 기본/Shift 마퀴 — 걸린 파트를 현재 선택에 합친다. (기본은 mousedown 에서 기존
+        // 선택을 비웠으므로 사실상 '교체', Shift 는 비우지 않으므로 '추가'가 된다.)
+        selectMany([...new Set([...selectedPartIds, ...hits])]);
+      }
+    }
   }, [
     marquee,
     selectMany,
@@ -4142,8 +4170,8 @@ export default function CanvasPanel({ projectId }: Props) {
                   y={marquee.y}
                   width={marquee.width}
                   height={marquee.height}
-                  fill={SELECTION_FILL}
-                  stroke={SELECTION_STROKE}
+                  fill={marqueeAltRef.current ? MARQUEE_SUBTRACT_FILL : SELECTION_FILL}
+                  stroke={marqueeAltRef.current ? MARQUEE_SUBTRACT_STROKE : SELECTION_STROKE}
                   strokeWidth={1 / viewport.zoom}
                   listening={false}
                 />
