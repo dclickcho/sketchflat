@@ -61,6 +61,10 @@ export interface LibraryAsset {
   name: string;
   category: string;
   svgUrl: string;
+  // 저장(드래그-드롭) 시점의 화면(world) bbox 크기. 캔버스에 다시 적용할 때 이 크기를
+  // 그대로 복원해 "저장했을 때 사이즈"로 불러온다. 사전 제작 카탈로그 에셋엔 없을 수 있다.
+  width?: number;
+  height?: number;
 }
 
 // 캔버스의 패스를 좌측 라이브러리 패널로 끌어다 놓아 직접 추가한 에셋이 들어가는 카테고리.
@@ -68,9 +72,12 @@ export interface LibraryAsset {
 export const MY_LIBRARY_CATEGORY = '내 라이브러리';
 
 // 이름 입력 팝업에 넘기는 임시 에셋 초안 — 드롭 시점에 직렬화한 SVG data URL + 기본 이름.
+// width/height 는 드롭 시점의 world bbox 크기(=저장 사이즈).
 export interface PendingAssetDraft {
   svgUrl: string;
   defaultName: string;
+  width: number;
+  height: number;
 }
 // 'select'      = 일러스트레이터의 검은 화살표(V). 파트 통째로 이동·회전·스케일.
 // 'direct-select' = 흰 화살표(A). 앵커/핸들/세그먼트 편집 전용. 파트 자체는 못 움직임.
@@ -2790,6 +2797,31 @@ export const useEditorStore = create<EditorStore>()(
         const { svg } = serializeSelectedPartsToSvg(parts);
         const svgUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 
+        // 드롭 시점의 화면(world) bbox 크기 — 재적용 시 이 크기로 그대로 복원한다.
+        // (parseRawSvgToParts 가 <g transform> 을 무시하므로, 재적용은 이 크기를 target 으로
+        // fitPartsToBbox 해 사이즈를 맞춘다.)
+        let minX = Infinity;
+        let minY = Infinity;
+        let maxX = -Infinity;
+        let maxY = -Infinity;
+        let hasPt = false;
+        for (const part of parts) {
+          const t = part.transform ?? DEFAULT_TRANSFORM;
+          for (const sub of flattenPart(part)) {
+            for (const pt of sub.points) {
+              const w = localToWorld({ x: pt.x, y: pt.y }, t);
+              if (!Number.isFinite(w.x) || !Number.isFinite(w.y)) continue;
+              if (w.x < minX) minX = w.x;
+              if (w.y < minY) minY = w.y;
+              if (w.x > maxX) maxX = w.x;
+              if (w.y > maxY) maxY = w.y;
+              hasPt = true;
+            }
+          }
+        }
+        const width = hasPt ? maxX - minX : 0;
+        const height = hasPt ? maxY - minY : 0;
+
         // 기본 이름 — 그룹명 > 파트의 사용자 이름 > 카테고리 > 폴백.
         let defaultName = '내 에셋';
         const groupId = parts.find((p) => p.group_id)?.group_id;
@@ -2802,7 +2834,7 @@ export const useEditorStore = create<EditorStore>()(
         }
 
         set((state) => {
-          state.pendingAssetDraft = { svgUrl, defaultName };
+          state.pendingAssetDraft = { svgUrl, defaultName, width, height };
           state.partAssetDragActive = false;
           state.partAssetDropHover = false;
           // 드롭과 동시에 라이브러리 탭으로 전환해 추가 결과가 바로 보이게 한다.
@@ -2829,6 +2861,8 @@ export const useEditorStore = create<EditorStore>()(
             name: trimmed,
             category: MY_LIBRARY_CATEGORY,
             svgUrl: draft.svgUrl,
+            width: draft.width,
+            height: draft.height,
           });
           state.pendingAssetDraft = null;
           state.partAssetDragActive = false;
@@ -2891,11 +2925,16 @@ export const useEditorStore = create<EditorStore>()(
         };
 
         // 크기 기준(sizeRef) 결정:
+        //   0) 사용자가 드래그-드롭으로 저장한 에셋(width/height 보유)은 그 "저장 사이즈"를
+        //      그대로 복원한다 — 다른 부위 크기에 맞춰 리스케일하지 않는다.
         //   1) 같은 카테고리 부위가 있으면 그 부위들의 합쳐진 bbox 크기.
         //   2) 없으면 기존 최상위 그룹(부위)들의 중앙값 크기.
         //   3) 그래도 없으면(빈 캔버스) 캔버스 단변의 40% 정사각.
-        let sizeRef: { width: number; height: number } | null = null;
-        if (matchedGroupIds.length > 0) {
+        let sizeRef: { width: number; height: number } | null =
+          asset.width && asset.height && asset.width > 0 && asset.height > 0
+            ? { width: asset.width, height: asset.height }
+            : null;
+        if (!sizeRef && matchedGroupIds.length > 0) {
           const ids = new Set<string>();
           for (const gid of matchedGroupIds) {
             for (const pid of get().getGroupDescendantPartIds(gid)) ids.add(pid);
