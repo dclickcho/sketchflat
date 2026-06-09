@@ -282,14 +282,6 @@ export function LandingPage() {
             <div className="w-[1920px] h-px left-0 top-[56px] absolute bg-gray-200" />
             <div className="absolute left-[319px] top-0 w-px h-[57px] bg-gray-200" />
             <div className="absolute left-[1600px] top-0 w-px h-[57px] bg-gray-200" />
-            <Link
-              href="/"
-              className="absolute left-[342px] top-[13px] w-[106px] h-[24px]"
-              aria-label="SketchFlat"
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/landing/sketchflat-logo-header.svg" alt="SketchFlat" className="w-full h-full" />
-            </Link>
             <nav className="absolute left-[852px] top-[20.09px] flex gap-10 text-zinc-800 text-sm font-normal leading-4">
               <a href="#generation" className="hover:text-zinc-600 transition-colors">Features</a>
               <a href="#" className="hover:text-zinc-600 transition-colors">Pricing</a>
