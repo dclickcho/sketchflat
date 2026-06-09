@@ -119,6 +119,12 @@ const ANCHOR_SIDE_PX = 7;
 const HANDLE_RADIUS_PX = 4;
 const OVERLAY_STROKE_WIDTH_PX = 1;
 
+// select 도구로 파트를 클릭할 때의 최소 클릭 가용 밴드(화면 픽셀).
+// AI 도식화는 fill="none" 의 얇은 라인 드로잉이라, hitStrokeWidth 를 안 주면
+// 클릭 영역이 1~2px 선폭으로 좁아져 선택이 매우 까다롭다. 화면 픽셀 기준으로
+// 일정 밴드를 확보하되, 실제 stroke 가 더 두꺼우면 그 두께를 따른다.
+const PART_HIT_BAND_PX = 8;
+
 // 새 sketch가 로드될 때 캔버스를 viewport 가운데에 맞춰주는 fit-to-view 여백.
 const FIT_PADDING = 40;
 
@@ -3349,6 +3355,21 @@ export default function CanvasPanel({ projectId }: Props) {
                   );
                   const overlayStrokeWidth = selectionWidthWorld / partScale;
 
+                  // 클릭 가용 밴드 — 화면 PART_HIT_BAND_PX 픽셀을 파트 로컬 단위로 환산.
+                  // overlayStrokeWidth 와 동일하게 viewport.zoom·partScale 둘 다 나눠 줌과
+                  // 무관하게 일정한 화면 두께를 유지한다. 실제 stroke 가 더 두꺼우면 그쪽을 따른다.
+                  // 브러쉬 파트는 spine 이 안 보여 별도로 12(로컬)로 잡던 기존 값을 유지.
+                  // strokeProp 가 있을 때(=눈에 보이는 라인)만 밴드를 넓힌다. fill 만 있는
+                  // 파트는 이미 fill 영역으로 클릭되고, stroke·fill 둘 다 없는 비가시 파트는
+                  // 유령 클릭 영역이 생기지 않도록 기존(undefined='auto') 동작을 유지한다.
+                  const minHitBandWorld =
+                    PART_HIT_BAND_PX / viewport.zoom / partScale;
+                  const partHitStrokeWidth = hasBrush
+                    ? 12
+                    : strokeProp !== undefined
+                      ? Math.max(part.stroke_width ?? 0, minHitBandWorld)
+                      : undefined;
+
                   return (
                     <Fragment key={part.id}>
                     <Path
@@ -3368,7 +3389,8 @@ export default function CanvasPanel({ projectId }: Props) {
                         hasBrush && showSelection ? selectionWidthWorld : part.stroke_width
                       }
                       // 브러쉬 파트는 스트로크가 안 보여도 spine 을 클릭/드래그로 잡을 수 있게 hit 영역 확보.
-                      hitStrokeWidth={hasBrush ? 12 : undefined}
+                      // 비-브러쉬(얇은 라인) 파트도 화면 기준 최소 밴드를 줘 선택이 빗나가지 않게 한다.
+                      hitStrokeWidth={partHitStrokeWidth}
                       dash={part.stroke_dasharray}
                       lineCap={part.stroke_linecap}
                       lineJoin={part.stroke_linejoin}
