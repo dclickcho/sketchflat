@@ -56,15 +56,46 @@ interface LeftPanelProps {
 export function LeftPanel({ projectId, initialTitle }: LeftPanelProps) {
   const panelMode = useEditorStore((s) => s.panelMode);
   const setPanelMode = useEditorStore((s) => s.setPanelMode);
+  // 캔버스에서 패스를 끌어오는 중이면 패널 전체를 드롭존으로 강조한다.
+  const partAssetDragActive = useEditorStore((s) => s.partAssetDragActive);
+  // 포인터가 실제로 패널 위에 올라와 있는지 — 강조 강도를 높인다.
+  const partAssetDropHover = useEditorStore((s) => s.partAssetDropHover);
+  // 드롭 직후 이름 입력 팝업 — non-null 이면 모달을 띄운다.
+  const pendingAssetDraft = useEditorStore((s) => s.pendingAssetDraft);
 
   return (
     <aside
-      className="w-60 flex flex-col shrink-0 border-r"
+      data-asset-drop-zone
+      className="relative w-60 flex flex-col shrink-0 border-r"
       style={{
         backgroundColor: 'hsl(var(--editor-panel))',
         borderColor: 'hsl(var(--editor-border))',
       }}
     >
+      {/* 캔버스 패스를 끌어오는 동안 표시되는 드롭 안내 오버레이. 패널 위로 포인터가
+          올라오면(hover) 진하게 강조하고, 그 전에는 옅은 테두리만 비춘다. */}
+      {partAssetDragActive ? (
+        <div
+          className="absolute inset-0 z-40 flex items-center justify-center pointer-events-none transition-colors"
+          style={{
+            backgroundColor: partAssetDropHover ? 'rgba(56,132,255,0.10)' : 'transparent',
+            border: partAssetDropHover ? '2px dashed #3884ff' : '2px dashed rgba(56,132,255,0.35)',
+            borderRadius: 6,
+          }}
+        >
+          {partAssetDropHover ? (
+            <div
+              className="px-3 py-1.5 rounded-md text-[12px] font-medium text-white shadow"
+              style={{ backgroundColor: '#3884ff', letterSpacing: '-0.14px' }}
+            >
+              여기에 놓아 내 라이브러리에 추가
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
+      {pendingAssetDraft ? <AssetNameModal /> : null}
+
       <ProjectHeader projectId={projectId} initialTitle={initialTitle} />
 
       {/* 탭바 — 활성 탭은 회색 박스로 표시 (밑줄 X). */}
@@ -1126,6 +1157,137 @@ function RootDropZone({
         />
       ) : null}
     </li>
+  );
+}
+
+// 캔버스 패스를 좌측 패널에 드롭했을 때 뜨는 이름 입력 팝업. 확인 시 "내 라이브러리"
+// 카테고리 에셋으로 추가된다. pendingAssetDraft 가 살아 있는 동안만 렌더된다.
+function AssetNameModal() {
+  const draft = useEditorStore((s) => s.pendingAssetDraft);
+  const commitPendingAsset = useEditorStore((s) => s.commitPendingAsset);
+  const cancelPendingAsset = useEditorStore((s) => s.cancelPendingAsset);
+
+  const [name, setName] = useState(draft?.defaultName ?? '');
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // 새 초안이 들어올 때마다 기본 이름으로 리셋하고 입력에 포커스/전체선택.
+  useEffect(() => {
+    setName(draft?.defaultName ?? '');
+  }, [draft?.defaultName]);
+  useEffect(() => {
+    inputRef.current?.focus();
+    inputRef.current?.select();
+  }, []);
+
+  const confirm = useCallback(() => {
+    commitPendingAsset(name);
+  }, [commitPendingAsset, name]);
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        cancelPendingAsset();
+      }
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [cancelPendingAsset]);
+
+  if (!draft) return null;
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="에셋 이름 입력"
+      className="fixed inset-0 z-[60] flex items-center justify-center"
+    >
+      <div className="absolute inset-0 bg-black/30" onClick={cancelPendingAsset} aria-hidden />
+      <div
+        className="relative w-[320px] max-w-[92vw] rounded-lg bg-white shadow-xl flex flex-col overflow-hidden"
+        style={{ border: '1px solid hsl(var(--editor-border))' }}
+      >
+        <div
+          className="h-11 px-4 flex items-center justify-between border-b shrink-0"
+          style={{ borderColor: 'hsl(var(--editor-border))' }}
+        >
+          <h2 className="text-[13px] font-semibold text-foreground" style={{ letterSpacing: '-0.2px' }}>
+            내 라이브러리에 추가
+          </h2>
+          <button
+            type="button"
+            aria-label="닫기"
+            onClick={cancelPendingAsset}
+            className="w-7 h-7 flex items-center justify-center rounded text-[hsl(var(--editor-mute))] hover:text-foreground hover:bg-black/[0.06] transition-colors"
+          >
+            <X size={16} strokeWidth={1.75} />
+          </button>
+        </div>
+
+        <div className="p-4 flex flex-col gap-3">
+          {/* 추가될 에셋 미리보기. */}
+          <div
+            className="aspect-square w-24 self-center rounded border bg-white overflow-hidden flex items-center justify-center"
+            style={{ borderColor: 'hsl(var(--editor-border))' }}
+          >
+            <img
+              src={draft.svgUrl}
+              alt="미리보기"
+              className="w-full h-full object-contain p-1.5"
+              draggable={false}
+            />
+          </div>
+
+          <label className="flex flex-col gap-1">
+            <span
+              className="text-[11px] font-medium text-[hsl(var(--editor-mute))]"
+              style={{ letterSpacing: '-0.14px' }}
+            >
+              에셋 이름
+            </span>
+            <input
+              ref={inputRef}
+              type="text"
+              value={name}
+              maxLength={120}
+              onChange={(e) => setName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  confirm();
+                }
+              }}
+              placeholder="이름을 입력하세요"
+              className="h-8 rounded border bg-white px-2 text-[13px] text-foreground outline-none focus:border-black"
+              style={{ borderColor: 'hsl(var(--editor-border))', letterSpacing: '-0.2px' }}
+            />
+          </label>
+        </div>
+
+        <div
+          className="px-4 py-3 flex items-center justify-end gap-2 border-t shrink-0"
+          style={{ borderColor: 'hsl(var(--editor-border))' }}
+        >
+          <button
+            type="button"
+            onClick={cancelPendingAsset}
+            className="h-8 px-3 rounded text-[12px] font-medium text-foreground border hover:bg-[hsl(var(--editor-hover))] transition-colors"
+            style={{ borderColor: 'hsl(var(--editor-border))', letterSpacing: '-0.14px' }}
+          >
+            취소
+          </button>
+          <button
+            type="button"
+            onClick={confirm}
+            className="h-8 px-3 rounded text-[12px] font-medium text-white transition-colors hover:brightness-110"
+            style={{ backgroundColor: '#3884ff', letterSpacing: '-0.14px' }}
+          >
+            추가
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 

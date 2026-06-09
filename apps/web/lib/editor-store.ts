@@ -16,6 +16,7 @@ import {
   flattenPart,
 } from '@sketchflat/svg-schema';
 import { parseRawSvgToParts } from '@/lib/svg-to-parts';
+import { serializeSelectedPartsToSvg } from '@/lib/export-parts';
 import { fitPartsToBbox } from '@/lib/fit-parts-to-bbox';
 import { expandBrushPart } from '@/lib/expand-brush';
 import { findBrushDefinition } from '@/lib/brush-lookup';
@@ -60,6 +61,16 @@ export interface LibraryAsset {
   name: string;
   category: string;
   svgUrl: string;
+}
+
+// 캔버스의 패스를 좌측 라이브러리 패널로 끌어다 놓아 직접 추가한 에셋이 들어가는 카테고리.
+// 사전 제작 카탈로그(카테고리별)와 구분되는 "내 라이브러리" 섹션으로 좌측 패널에 노출된다.
+export const MY_LIBRARY_CATEGORY = '내 라이브러리';
+
+// 이름 입력 팝업에 넘기는 임시 에셋 초안 — 드롭 시점에 직렬화한 SVG data URL + 기본 이름.
+export interface PendingAssetDraft {
+  svgUrl: string;
+  defaultName: string;
 }
 // 'select'      = 일러스트레이터의 검은 화살표(V). 파트 통째로 이동·회전·스케일.
 // 'direct-select' = 흰 화살표(A). 앵커/핸들/세그먼트 편집 전용. 파트 자체는 못 움직임.
@@ -146,6 +157,13 @@ interface EditorState {
   // 라이브러리 관리 모달에서 추가된 에셋 목록. 좌측 라이브러리 탭이 비어있을 때
   // 카드 그리드로 보여 주기 위한 단순 배열. id 기준 dedupe.
   libraryAssets: LibraryAsset[];
+  // 캔버스에서 패스를 좌측 라이브러리 패널로 드래그하는 중인지 — 좌측 패널의 드롭존
+  // 하이라이트를 켜고 끄는 데 쓴다. 드롭(또는 취소) 시 false 로 돌아간다.
+  partAssetDragActive: boolean;
+  // 드래그 중 포인터가 실제로 좌측 패널(드롭존) 위에 올라와 있는지 — 강조 표시 강도를 높인다.
+  partAssetDropHover: boolean;
+  // 드롭 직후 이름 입력 팝업에 넘길 임시 에셋 초안. 팝업이 열려 있는 동안만 non-null.
+  pendingAssetDraft: PendingAssetDraft | null;
   // 우측 채우기 → 그라디언트 편집 popover 의 open 상태. 캔버스의 그라디언트 핸들 바 표시
   // 조건과 lifetime 을 공유한다 — popover 가 열려야만 핸들이 보이고, part 드래그/변형 시
   // popover 가 닫히면서 핸들도 자연스럽게 사라진다.
@@ -402,6 +420,19 @@ interface EditorActions {
   addLibraryAssets: (assets: LibraryAsset[]) => void;
   /** 좌측 라이브러리 탭 카드의 X 버튼으로 단일 에셋 제거. */
   removeLibraryAsset: (id: string) => void;
+
+  // 캔버스 → 좌측 라이브러리 패널 드래그로 에셋 추가
+  /** 캔버스에서 패스 드래그가 진행 중인지 토글 — 좌측 패널 드롭존 하이라이트용. */
+  setPartAssetDragActive: (active: boolean) => void;
+  /** 드래그 포인터가 좌측 패널 위에 올라와 있는지 토글 — 강조 강도 전환용. */
+  setPartAssetDropHover: (hover: boolean) => void;
+  /** 드래그한 파트들을 현재 위치/크기 그대로 SVG 로 직렬화해 이름 입력 팝업용 초안으로
+   *  보관하고, 좌측 패널을 라이브러리 탭으로 전환한다. */
+  requestAssetFromParts: (partIds: string[]) => void;
+  /** 이름 입력 팝업 취소 — 초안 폐기. */
+  cancelPendingAsset: () => void;
+  /** 이름 입력 팝업 확인 — 초안을 "내 라이브러리" 카테고리 에셋으로 좌측 패널에 추가. */
+  commitPendingAsset: (name: string) => void;
   /** 라이브러리 카드 클릭 — 캔버스에서 카테고리와 같은 이름(예: "카라")의 최상위 그룹을 찾아
    *  파트들의 visible=false 로 숨기고, 해당 그룹의 world bbox 에 새 에셋을 스케일·정렬해 추가.
    *  기존 그룹 자체는 삭제되지 않으며 레이어 패널에서 가시성을 다시 켜면 원래대로 돌아온다.
@@ -455,6 +486,9 @@ export const useEditorStore = create<EditorStore>()(
       pendingViewCommand: null,
       imageInputOpen: false,
       libraryAssets: [],
+      partAssetDragActive: false,
+      partAssetDropHover: false,
+      pendingAssetDraft: null,
       isGradientPanelOpen: false,
       selectedStopIndex: 0,
 
@@ -2730,6 +2764,75 @@ export const useEditorStore = create<EditorStore>()(
       removeLibraryAsset: (id) =>
         set((state) => {
           state.libraryAssets = state.libraryAssets.filter((a) => a.id !== id);
+        }),
+
+      setPartAssetDragActive: (active) =>
+        set((state) => {
+          state.partAssetDragActive = active;
+          if (!active) state.partAssetDropHover = false;
+        }),
+
+      setPartAssetDropHover: (hover) =>
+        set((state) => {
+          state.partAssetDropHover = hover;
+        }),
+
+      requestAssetFromParts: (partIds) => {
+        const sketch = get().sketch;
+        if (!sketch) return;
+        const idSet = new Set(partIds);
+        // z-order/위치를 그대로 보존하려고 원본 parts 배열 순서대로 추린다.
+        const parts = sketch.parts.filter((p) => idSet.has(p.id));
+        if (parts.length === 0) return;
+
+        // export 와 동일한 직렬화기 — 각 파트의 transform 을 보존하고 viewBox 를 선택 영역
+        // bbox 로 크롭한다. 결과 SVG 는 data URL 로 만들어 <img> 미리보기·재적용 fetch 모두에 쓴다.
+        const { svg } = serializeSelectedPartsToSvg(parts);
+        const svgUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+
+        // 기본 이름 — 그룹명 > 파트의 사용자 이름 > 카테고리 > 폴백.
+        let defaultName = '내 에셋';
+        const groupId = parts.find((p) => p.group_id)?.group_id;
+        if (groupId && sketch.group_names[groupId]) {
+          defaultName = sketch.group_names[groupId];
+        } else if (parts[0]?.name) {
+          defaultName = parts[0].name as string;
+        } else if (parts[0]?.category) {
+          defaultName = parts[0].category;
+        }
+
+        set((state) => {
+          state.pendingAssetDraft = { svgUrl, defaultName };
+          state.partAssetDragActive = false;
+          state.partAssetDropHover = false;
+          // 드롭과 동시에 라이브러리 탭으로 전환해 추가 결과가 바로 보이게 한다.
+          state.panelMode = 'library';
+        });
+      },
+
+      cancelPendingAsset: () =>
+        set((state) => {
+          state.pendingAssetDraft = null;
+          state.partAssetDragActive = false;
+        }),
+
+      commitPendingAsset: (name) =>
+        set((state) => {
+          const draft = state.pendingAssetDraft;
+          if (!draft) return;
+          const trimmed = name.trim() || draft.defaultName;
+          const id = `myasset_${Date.now().toString(36)}_${Math.floor(
+            Math.random() * 1e6,
+          ).toString(36)}`;
+          state.libraryAssets.push({
+            id,
+            name: trimmed,
+            category: MY_LIBRARY_CATEGORY,
+            svgUrl: draft.svgUrl,
+          });
+          state.pendingAssetDraft = null;
+          state.partAssetDragActive = false;
+          state.panelMode = 'library';
         }),
 
       applyLibraryAssetToCanvas: async (assetId) => {

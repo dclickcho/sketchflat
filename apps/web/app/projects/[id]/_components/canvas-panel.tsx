@@ -604,6 +604,9 @@ export default function CanvasPanel({ projectId }: Props) {
   const groupParts = useEditorStore((s) => s.groupParts);
   const ungroupParts = useEditorStore((s) => s.ungroupParts);
   const getGroupMemberIds = useEditorStore((s) => s.getGroupMemberIds);
+  const setPartAssetDragActive = useEditorStore((s) => s.setPartAssetDragActive);
+  const setPartAssetDropHover = useEditorStore((s) => s.setPartAssetDropHover);
+  const requestAssetFromParts = useEditorStore((s) => s.requestAssetFromParts);
   const copyParts = useEditorStore((s) => s.copyParts);
   const pasteParts = useEditorStore((s) => s.pasteParts);
   const nudgeParts = useEditorStore((s) => s.nudgeParts);
@@ -727,6 +730,11 @@ export default function CanvasPanel({ projectId }: Props) {
   // 드래그 시작 시점의 absolute(=화면 pixel) 좌표를 노드 키별로 저장 — dragBoundFunc는
   // absolute 좌표로 입력/출력된다. 키는 part id 또는 artboard id.
   const dragStartAbsRef = useRef<Map<string, { x: number; y: number }>>(new Map());
+  // 파트 드래그 중 마지막 포인터 화면 좌표 — dragEnd 에서 좌측 라이브러리 패널(드롭존) 위에
+  // 놓였는지 판정하는 데 쓴다. Konva dragmove/dragend 의 native event 에서 갱신.
+  const lastPointerClientRef = useRef<{ x: number; y: number } | null>(null);
+  // 드롭존 hover 상태 — store 갱신을 값이 바뀔 때만 하도록 직전 값을 기억.
+  const assetDropHoverRef = useRef(false);
 
   // 컨테이너 크기 추적
   const containerRef = useRef<HTMLDivElement>(null);
@@ -1147,9 +1155,92 @@ export default function CanvasPanel({ projectId }: Props) {
             setReplicateImageUrl(body.job.output_image_url);
           }
 
-          // 벡터화는 Replicate webhook 안에서 Quiver Arrow API 로 동기 처리되어 sketches 버킷에
-          // SVG 로 저장된다. 클라이언트는 폴링으로 'vectorizing' 동안 스피너를 유지하다가
-          // 'succeeded' 에서 sketch_signed_url 로 결과 SVG 를 로드한다.
+          // 벡터화 단계 진입 — Arrow 스트림(stream:true)을 한 번만 열어 "그려지는 모습"을 미리보기로 띄운다.
+          // 실제 SVG 저장은 webhook 의 vectorizeImage(stream:false)가 담당하므로 이 SSE 는 표시 전용.
+          // 425(아직 output_image_url 없음)/409(이미 종료)는 onerror 에서 조용히 닫고 spinner 로 폴백.
+          if (
+            status === 'vectorizing' &&
+            !previewStartedRef.current &&
+            typeof window !== 'undefined' &&
+            typeof window.EventSource === 'function'
+          ) {
+            previewStartedRef.current = true;
+            previewAccumulatedRef.current = '';
+            const es = new EventSource(`/api/jobs/${id}/vectorize-preview`);
+            previewSourceRef.current = es;
+
+            // 누적본 → DOM 반영. Arrow 는 토큰 단위로 흘려보내므로 토큰마다 setState 하면 수천 리렌더
+            // → UI 프리즈. rAF 로 프레임당 1회만 반영한다. 그릴 element 가 생기기 전(=<style> 토큰만
+            // 흘러온 구간)에는 previewParsed 를 null 로 두어 스피너를 유지한다.
+            const flushPreview = (isFinal: boolean) => {
+              const safe = closePartialSvg(previewAccumulatedRef.current);
+              if (!svgHasRenderable(safe)) return;
+              // 폴백 — 파싱이 실패해도 통째 innerHTML 로라도 미리보기가 뜨도록.
+              setPreviewSvg(safe);
+              const parsed = parsePreviewSvg(safe, isFinal);
+              if (parsed && parsed.elements.length > 0) {
+                setPreviewParsed(parsed);
+              }
+            };
+            const schedulePreviewFlush = () => {
+              if (previewRafRef.current !== null) return;
+              previewRafRef.current = requestAnimationFrame(() => {
+                previewRafRef.current = null;
+                flushPreview(false);
+              });
+            };
+
+            es.onmessage = (ev) => {
+              if (ev.data === '[DONE]') {
+                es.close();
+                if (previewSourceRef.current === es) previewSourceRef.current = null;
+                return;
+              }
+              try {
+                const payload = JSON.parse(ev.data) as {
+                  phase?: string;
+                  svg?: string;
+                  message?: string;
+                };
+                if (payload.phase === 'error') {
+                  es.close();
+                  if (previewSourceRef.current === es) previewSourceRef.current = null;
+                  return;
+                }
+                if (typeof payload.svg === 'string' && payload.svg.length > 0) {
+                  // 누적 vs 증분 런타임 판별 — 새 청크가 직전 누적본을 통째 prefix 로 포함하고 더
+                  // 길면 누적본(교체), 아니면 증분(델타) append. 'final' 은 완성본이라 항상 교체.
+                  const chunk = payload.svg;
+                  const prev = previewAccumulatedRef.current;
+                  const isFinal = payload.phase === 'final';
+                  const isCumulative =
+                    prev.length > 0 && chunk.length >= prev.length && chunk.startsWith(prev);
+                  if (isFinal || isCumulative) {
+                    previewAccumulatedRef.current = chunk;
+                  } else {
+                    previewAccumulatedRef.current = prev + chunk;
+                  }
+                  // 완성본은 다음 프레임을 기다리지 않고 즉시 반영.
+                  if (isFinal) {
+                    if (previewRafRef.current !== null) {
+                      cancelAnimationFrame(previewRafRef.current);
+                      previewRafRef.current = null;
+                    }
+                    flushPreview(true);
+                  } else {
+                    schedulePreviewFlush();
+                  }
+                }
+              } catch {
+                // JSON 파싱 실패는 무시하고 다음 메시지로.
+              }
+            };
+            es.onerror = () => {
+              // 네트워크 끊김/서버 오류/425/409 — 한 번만 시도하고 spinner 폴백.
+              es.close();
+              if (previewSourceRef.current === es) previewSourceRef.current = null;
+            };
+          }
 
           if (status === 'failed' || status === 'error') {
             stopPolling();
@@ -2505,6 +2596,29 @@ export default function CanvasPanel({ projectId }: Props) {
     [viewport.zoom],
   );
 
+  // ── 좌측 라이브러리 패널로 드래그-드롭(에셋 추가) 헬퍼 ───────────
+  // 파트를 끌고 가다 좌측 "내 라이브러리" 패널(드롭존) 위에서 놓으면, 캔버스 이동 대신
+  // 에셋으로 등록한다. native 포인터 좌표가 LeftPanel 의 [data-asset-drop-zone] 사각형
+  // 안에 들어오는지로 판정한다.
+  const isPointerOverAssetDropZone = useCallback((): boolean => {
+    const pt = lastPointerClientRef.current;
+    if (!pt) return false;
+    const zone = document.querySelector('[data-asset-drop-zone]');
+    if (!zone) return false;
+    const r = zone.getBoundingClientRect();
+    return pt.x >= r.left && pt.x <= r.right && pt.y >= r.top && pt.y <= r.bottom;
+  }, []);
+
+  // Konva drag 이벤트의 native event 에서 화면(client) 좌표를 뽑아 ref 에 저장.
+  const trackPointerClient = useCallback((evt: MouseEvent | TouchEvent) => {
+    if ('clientX' in evt) {
+      lastPointerClientRef.current = { x: evt.clientX, y: evt.clientY };
+    } else if (evt.changedTouches && evt.changedTouches.length > 0) {
+      const t = evt.changedTouches[0];
+      lastPointerClientRef.current = { x: t.clientX, y: t.clientY };
+    }
+  }, []);
+
   // ── anchor/handle 드래그 history 배치 헬퍼 ────────────────
   // dragStart에서 beginAnchorDrag → 첫 dragMove에서 markFirstDragMove → dragEnd에서 endAnchorDrag.
   // 이 시퀀스로 한 번의 드래그 전체가 단일 undo 스텝이 된다.
@@ -3465,6 +3579,10 @@ export default function CanvasPanel({ projectId }: Props) {
                         const groupExclude = new Set(getGroupMemberIds(part.id));
                         snapTargetsRef.current = buildSnapTargets(groupExclude, null);
                         beginPartOp();
+                        // 좌측 라이브러리 패널 드롭존 하이라이트 ON + 포인터 추적 시작.
+                        lastPointerClientRef.current = { x: e.evt.clientX, y: e.evt.clientY };
+                        assetDropHoverRef.current = false;
+                        setPartAssetDragActive(true);
                         // part 이동/드래그 시작 → 그라디언트 popover·핸들 자동 닫힘.
                         setGradientPanelOpen(false);
                       }}
@@ -3483,10 +3601,35 @@ export default function CanvasPanel({ projectId }: Props) {
                         // 2) shift 축스냅 — 이미 스냅된 좌표 위에서 다시 적용.
                         return snapDragToAxis(part.id, snapped.posAbs);
                       }}
-                      onDragMove={(e) => syncSelectionOverlay(part.id, e.target)}
+                      onDragMove={(e) => {
+                        trackPointerClient(e.evt);
+                        // 포인터가 좌측 패널 위로 들어오고 나갈 때만 store hover 플래그를 갱신.
+                        const over = isPointerOverAssetDropZone();
+                        if (over !== assetDropHoverRef.current) {
+                          assetDropHoverRef.current = over;
+                          setPartAssetDropHover(over);
+                        }
+                        syncSelectionOverlay(part.id, e.target);
+                      }}
                       onDragEnd={(e) => {
+                        trackPointerClient(e.evt);
+                        // 좌측 라이브러리 패널 위에서 놓았으면 캔버스 이동을 취소(원위치 복원)하고
+                        // 드래그한 파트(그룹 멤버 포함)를 에셋으로 등록한다.
+                        if (isPointerOverAssetDropZone()) {
+                          const startAbs = dragStartAbsRef.current.get(part.id);
+                          if (startAbs) e.target.absolutePosition(startAbs);
+                          syncSelectionOverlay(part.id, e.target);
+                          e.target.getLayer()?.batchDraw();
+                          dragStartAbsRef.current.delete(part.id);
+                          applyGuides({ vertical: [], horizontal: [] });
+                          // 같은 그룹이면 그룹 전체를, 아니면 이 패스만 에셋으로.
+                          const members = getGroupMemberIds(part.id);
+                          requestAssetFromParts(members.length > 0 ? members : [part.id]);
+                          return;
+                        }
                         commitNodeTransformBatched(part.id, e.target);
                         dragStartAbsRef.current.delete(part.id);
+                        setPartAssetDragActive(false);
                         // 가이드 비우기.
                         applyGuides({ vertical: [], horizontal: [] });
                       }}
