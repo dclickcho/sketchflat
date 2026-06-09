@@ -10,6 +10,12 @@ export const runtime = 'nodejs';
 export const maxDuration = 60;
 export const dynamic = 'force-dynamic';
 
+// 클라이언트 미리보기 SSE 가 vectorizing→streaming 락을 잡을 시간(ms). 클라는 1.5s 폴링이라
+// 2 사이클 + SSE 기동 여유로 3s. 길수록 클라가 미리보기를 잡을 확률↑, webhook 응답 지연↑.
+const WEBHOOK_GRACE_MS = 3000;
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
 type ReplicatePayload = {
   id: string;
   status: 'starting' | 'processing' | 'succeeded' | 'failed' | 'canceled';
@@ -111,8 +117,32 @@ export async function POST(request: NextRequest) {
     .update({ status: 'vectorizing', output_image_url: imageUrl })
     .eq('id', job.id);
 
-  // Quiver Arrow API로 PNG → SVG 동기 변환. Arrow는 webhook/polling 미제공이라
-  // 이 핸들러(maxDuration=60) 한 사이클 안에서 끝낸다.
+  // ── 단일 Arrow 호출 설계 — webhook 은 폴백 ──────────────────────────────
+  // 실제 Arrow 벡터화는 클라이언트 미리보기 SSE(/api/jobs/[id]/vectorize-preview)가 담당한다.
+  // 클라가 보고 있으면(거의 항상) 그쪽이 vectorizing→streaming 락을 잡아 스트리밍+저장까지 1번에
+  // 끝낸다 → webhook 은 Arrow 를 호출하지 않는다(중복 호출/Quiver 크레딧 2배 방지).
+  // 아무도 안 볼 때만(탭 닫힘 등) webhook 이 폴백으로 직접 벡터화한다.
+  //
+  // 짧게 대기해 클라(1.5s 폴링)가 'vectorizing' 을 보고 SSE 락을 잡을 시간을 준다.
+  await sleep(WEBHOOK_GRACE_MS);
+
+  // atomic 락 시도 — 아직 'vectorizing' 이면 클라가 안 잡은 것 → webhook 이 폴백으로 처리.
+  const { data: claimed } = await admin
+    .from('jobs')
+    .update({ status: 'streaming' })
+    .eq('id', job.id)
+    .eq('status', 'vectorizing')
+    .select('id')
+    .maybeSingle();
+
+  if (!claimed) {
+    // 클라이언트 SSE 가 이미 선점(streaming/succeeded/...) — 그쪽이 스트리밍+저장 담당.
+    console.log(`[vectorize] client SSE claimed — webhook skip, job=${job.id}`);
+    return new Response('ok', { status: 200 });
+  }
+
+  // 폴백 경로 — 아무도 안 보고 있음. webhook 이 직접 Arrow(stream:false) 벡터화+저장.
+  // Arrow는 webhook/polling 미제공이라 이 핸들러(maxDuration=60) 한 사이클 안에서 끝낸다.
   try {
     const { svg } = await vectorizeImage({ imageUrl });
 
@@ -137,7 +167,7 @@ export async function POST(request: NextRequest) {
       .from('jobs')
       .update({ status: 'succeeded', output_sketch_url: sketchPath })
       .eq('id', job.id);
-    console.log(`[vectorize] done via Quiver — job=${job.id} bytes=${svg.length}`);
+    console.log(`[vectorize] done via webhook fallback — job=${job.id} bytes=${svg.length}`);
   } catch (err) {
     const message =
       err instanceof ArrowError
