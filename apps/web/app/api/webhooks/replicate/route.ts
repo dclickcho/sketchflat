@@ -25,7 +25,11 @@ export async function POST(request: NextRequest) {
   const raw = await request.text();
 
   const verify = verifySignature(request, raw);
-  if (!verify.ok) return new Response(verify.reason, { status: 401 });
+  if (!verify.ok) {
+    // 401 사유를 로그로 남겨 시크릿 불일치/미설정 등을 즉시 진단 가능하게 한다.
+    console.warn(`[replicate webhook] 서명 검증 실패 (401) — reason=${verify.reason}`);
+    return new Response(verify.reason, { status: 401 });
+  }
 
   let payload: ReplicatePayload;
   try {
