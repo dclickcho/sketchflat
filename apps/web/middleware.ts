@@ -1,6 +1,5 @@
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
-import { isAllowedEmail } from '@/lib/auth/allowlist';
 
 type CookieToSet = { name: string; value: string; options: CookieOptions };
 
@@ -29,20 +28,7 @@ export async function middleware(request: NextRequest) {
   );
 
   // 매 요청마다 세션 토큰 갱신 — Server Component에서 getUser()/getSession()이 동작하려면 필수.
-  const { data } = await supabase.auth.getUser();
-
-  // 개발 중 접근 제한: 허용 목록에 없는 계정은(이메일/비번·Google 무관) 즉시 로그아웃 후 차단.
-  // 베타 오픈 시 이 블록과 allowlist.ts 를 제거.
-  const user = data.user;
-  if (user && !isAllowedEmail(user.email)) {
-    await supabase.auth.signOut();
-    const url = request.nextUrl.clone();
-    if (url.pathname !== '/login') {
-      url.pathname = '/login';
-      url.search = `?mode=login&error=${encodeURIComponent('접근 권한이 없는 계정입니다.')}`;
-      return NextResponse.redirect(url);
-    }
-  }
+  await supabase.auth.getUser();
 
   return response;
 }

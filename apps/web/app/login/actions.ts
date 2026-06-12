@@ -4,7 +4,6 @@ import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase/server';
-import { isAllowedEmail } from '@/lib/auth/allowlist';
 
 const CredentialsSchema = z.object({
   email: z.string().email(),
@@ -31,11 +30,6 @@ export async function login(formData: FormData) {
     password: formData.get('password'),
   });
   if (!parsed.success) backToLogin('login', '이메일/비밀번호 형식이 올바르지 않습니다.');
-
-  // 개발 중 접근 제한 — 허용 목록 외 계정은 인증 시도 자체를 막는다.
-  if (!isAllowedEmail(parsed.data.email)) {
-    backToLogin('login', '접근 권한이 없는 계정입니다.');
-  }
 
   const supabase = createClient();
   const { error } = await supabase.auth.signInWithPassword(parsed.data);
@@ -64,11 +58,6 @@ export async function signup(formData: FormData) {
     password: formData.get('password'),
   });
   if (!parsed.success) backToLogin('signup', '이메일/비밀번호 형식이 올바르지 않습니다.');
-
-  // 개발 중 접근 제한 — 허용 목록 외 신규 가입 차단.
-  if (!isAllowedEmail(parsed.data.email)) {
-    backToLogin('signup', '현재 비공개 개발 중이라 신규 가입이 제한되어 있습니다.');
-  }
 
   const supabase = createClient();
   const origin = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000';
